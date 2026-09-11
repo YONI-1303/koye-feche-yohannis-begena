@@ -1,9 +1,10 @@
-const CACHE_NAME = "kfy-begena-v3";
+const CACHE_NAME = "kfy-begena-v4";
 
 const APP_SHELL = [
     "./",
     "./index.html",
     "./styles.css",
+    "./app.js?v=208",
     "./manifest.webmanifest"
 ];
 
@@ -41,14 +42,29 @@ self.addEventListener("fetch", event => {
     const url = new URL(request.url);
 
     /*
-     * NEVER cache JavaScript.
+     * APP.JS
+     * Cache first so offline login can work.
      */
-    if (
-        url.pathname.endsWith("/app.js")
-    ) {
+    if (url.pathname.endsWith("/app.js")) {
         event.respondWith(
-            fetch(request, {
-                cache: "no-store"
+            caches.match(request).then(cachedResponse => {
+
+                if (cachedResponse) {
+                    return cachedResponse;
+                }
+
+                return fetch(request).then(response => {
+
+                    if (response && response.ok) {
+                        const clone = response.clone();
+
+                        caches.open(CACHE_NAME).then(cache => {
+                            cache.put(request, clone);
+                        });
+                    }
+
+                    return response;
+                });
             })
         );
 
@@ -56,22 +72,13 @@ self.addEventListener("fetch", event => {
     }
 
     /*
-     * NEVER use a cached index.html for navigation.
-     *
-     * Always try the network first so the newest
-     * application shell is loaded.
+     * NAVIGATION
+     * Network first, cache fallback.
      */
-    if (
-        request.mode === "navigate" ||
-        url.pathname.endsWith("/index.html")
-    ) {
+    if (request.mode === "navigate") {
         event.respondWith(
-            fetch(request, {
-                cache: "no-store"
-            })
-                .then(response => {
-                    return response;
-                })
+            fetch(request)
+                .then(response => response)
                 .catch(() => {
                     return caches.match("./index.html");
                 })
@@ -81,8 +88,8 @@ self.addEventListener("fetch", event => {
     }
 
     /*
-     * Other static files:
-     * cache first, then network.
+     * OTHER FILES
+     * Cache first, network fallback.
      */
     event.respondWith(
         caches.match(request).then(cachedResponse => {
@@ -95,22 +102,20 @@ self.addEventListener("fetch", event => {
                 .then(response => {
 
                     if (
-                        !response ||
-                        !response.ok
+                        response &&
+                        response.ok
                     ) {
-                        return response;
+                        const clone =
+                            response.clone();
+
+                        caches.open(CACHE_NAME)
+                            .then(cache => {
+                                cache.put(
+                                    request,
+                                    clone
+                                );
+                            });
                     }
-
-                    const responseClone =
-                        response.clone();
-
-                    caches.open(CACHE_NAME)
-                        .then(cache => {
-                            cache.put(
-                                request,
-                                responseClone
-                            );
-                        });
 
                     return response;
                 })
