@@ -5268,29 +5268,12 @@ const mezmurLibrary = [
 const activeMezmur = mezmurLibrary[0];
 async function mezmurPage() {
 
-    /*
-     * =========================================================
-     * LOAD SAVED MEZMUR
-     * =========================================================
-     */
-
     let mezmurs = [];
-
 
     const cachedMezmurs =
         typeof getOfflineContent === "function"
-            ? getOfflineContent(
-                "mezmur",
-                []
-            )
+            ? getOfflineContent("mezmur", [])
             : [];
-
-
-    /*
-     * =========================================================
-     * OFFLINE
-     * =========================================================
-     */
 
     if (!navigator.onLine) {
 
@@ -5299,16 +5282,7 @@ async function mezmurPage() {
                 ? cachedMezmurs
                 : [];
 
-    }
-
-
-    /*
-     * =========================================================
-     * ONLINE
-     * =========================================================
-     */
-
-    else {
+    } else {
 
         try {
 
@@ -5350,43 +5324,24 @@ async function mezmurPage() {
                             }
                         );
 
-
-                /*
-                 * SUPABASE ERROR
-                 */
-
                 if (error) {
 
                     console.warn(
-                        "⚠️ Mezmur failed. Using offline copy:",
+                        "⚠️ Mezmur loading failed. Using offline copy:",
                         error
                     );
 
                     mezmurs =
-                        Array.isArray(
-                            cachedMezmurs
-                        )
+                        Array.isArray(cachedMezmurs)
                             ? cachedMezmurs
                             : [];
 
-                }
-
-
-                /*
-                 * SUCCESS
-                 */
-
-                else {
+                } else {
 
                     mezmurs =
                         Array.isArray(data)
                             ? data
                             : [];
-
-
-                    /*
-                     * SAVE FOR OFFLINE
-                     */
 
                     if (
                         typeof saveOfflineContent ===
@@ -5420,431 +5375,8 @@ async function mezmurPage() {
 
     }
 
+    // KEEP THE REST OF YOUR EXISTING MEZMUR RENDERING CODE HERE
 
-    /*
-     * =========================================================
-     * NO MEZMUR
-     * =========================================================
-     */
-
-    if (!mezmurs.length) {
-
-        return `
-            <div class="page-stack">
-
-                <div class="hero">
-
-                    <h2>
-                        🎵 መዝሙር
-                    </h2>
-
-                    <p>
-                        የሚጠኑባቸው መዝሙሮች እዚህ ይታያሉ።
-                    </p>
-
-                </div>
-
-
-                <div class="card empty-state">
-
-                    <div style="font-size:40px;">
-                        🎵
-                    </div>
-
-                    <h3>
-                        ${
-                            navigator.onLine
-                                ? "ገና መዝሙር አልተጨመረም"
-                                : "ከመስመር ውጭ የተቀመጠ መዝሙር የለም"
-                        }
-                    </h3>
-
-                    <p class="muted">
-
-                        ${
-                            navigator.onLine
-                                ? "አስተማሪዎ መዝሙር ሲጨምሩ እዚህ ይታያል።"
-                                : "በመጀመሪያ ኢንተርኔት ላይ የመዝሙር ገጹን ይክፈቱ።"
-                        }
-
-                    </p>
-
-                </div>
-
-            </div>
-        `;
-
-    }
-
-
-    /*
-     * =========================================================
-     * SELECT MEZMUR
-     * =========================================================
-     */
-
-    const selectedMezmur =
-        mezmurs.find(
-            mezmur =>
-                mezmur.id ===
-                state.selectedMezmurId
-        ) ||
-        mezmurs[0];
-
-
-    /*
-     * =========================================================
-     * PAGE
-     * =========================================================
-     */
-
-    return `
-        <div class="page-stack">
-
-
-            <!-- HEADER -->
-
-            <div class="hero">
-
-                <h2>
-                    🎵 መዝሙር
-                </h2>
-
-                <p>
-                    የተጨመሩ መዝሙሮችን ይማሩ።
-                </p>
-
-            </div>
-
-
-            <!-- MEZMUR LIST -->
-
-            <div class="card">
-
-                <h3>
-                    📚 የመዝሙር ዝርዝር
-                </h3>
-
-
-                <div
-                    style="
-                        display:grid;
-                        gap:10px;
-                        margin-top:15px;
-                    "
-                >
-
-                    ${mezmurs.map(
-                        mezmur => `
-
-                            <button
-                                type="button"
-                                class="list-item"
-                                data-mezmur-id="${mezmur.id}"
-                                style="
-                                    text-align:left;
-                                    cursor:pointer;
-                                    width:100%;
-                                "
-                            >
-
-                                <div
-                                    style="
-                                        display:flex;
-                                        justify-content:space-between;
-                                        align-items:center;
-                                        gap:12px;
-                                    "
-                                >
-
-                                    <div>
-
-                                        <b>
-
-                                            ${escapeHtml(
-                                                state.language === "am"
-
-                                                    ? (
-                                                        mezmur.title_am ||
-                                                        mezmur.title_en ||
-                                                        ""
-                                                    )
-
-                                                    : (
-                                                        mezmur.title_en ||
-                                                        mezmur.title_am ||
-                                                        ""
-                                                    )
-                                            )}
-
-                                        </b>
-
-
-                                        <div class="muted">
-
-                                            ${escapeHtml(
-                                                state.language === "am"
-
-                                                    ? (
-                                                        mezmur.title_en ||
-                                                        ""
-                                                    )
-
-                                                    : (
-                                                        mezmur.title_am ||
-                                                        ""
-                                                    )
-                                            )}
-
-                                        </div>
-
-                                    </div>
-
-
-                                    ${
-                                        mezmur.qenet
-                                            ? `
-                                                <span class="pill gold">
-
-                                                    ${escapeHtml(
-                                                        mezmur.qenet
-                                                    )}
-
-                                                </span>
-                                            `
-                                            : ""
-                                    }
-
-                                </div>
-
-                            </button>
-
-                        `
-                    ).join("")}
-
-                </div>
-
-            </div>
-
-
-            <!-- SELECTED MEZMUR -->
-
-            <div class="grid two">
-
-
-                <!-- DETAILS -->
-
-                <div class="card">
-
-                    <h3>
-
-                        🎵
-                        ${escapeHtml(
-                            state.language === "am"
-
-                                ? (
-                                    selectedMezmur.title_am ||
-                                    selectedMezmur.title_en ||
-                                    ""
-                                )
-
-                                : (
-                                    selectedMezmur.title_en ||
-                                    selectedMezmur.title_am ||
-                                    ""
-                                )
-                        )}
-
-                    </h3>
-
-
-                    ${
-                        selectedMezmur.qenet
-                            ? `
-                                <div
-                                    class="pill gold"
-                                    style="
-                                        margin-top:10px;
-                                    "
-                                >
-
-                                    ${escapeHtml(
-                                        selectedMezmur.qenet
-                                    )}
-
-                                </div>
-                            `
-                            : ""
-                    }
-
-
-                    ${
-                        selectedMezmur.level
-                            ? `
-                                <div
-                                    class="pill"
-                                    style="
-                                        margin-top:10px;
-                                    "
-                                >
-
-                                    Level
-                                    ${escapeHtml(
-                                        String(
-                                            selectedMezmur.level
-                                        )
-                                    )}
-
-                                </div>
-                            `
-                            : ""
-                    }
-
-
-                    <hr
-                        style="
-                            border:0;
-                            border-top:
-                                1px solid var(--border);
-                            margin:20px 0;
-                        "
-                    >
-
-
-                    <h3>
-                        🎼 የበገና ልምምድ
-                    </h3>
-
-
-                    <p class="muted">
-
-                        ይህንን መዝሙር በበገና
-                        ለመለማመድ ወደ ልምምድ ይሂዱ።
-
-                    </p>
-
-
-                    <div
-                        class="row"
-                        style="
-                            margin-top:18px;
-                            gap:10px;
-                            flex-wrap:wrap;
-                        "
-                    >
-
-                        <button
-                            type="button"
-                            class="btn primary"
-                            id="practice-mezmur"
-                        >
-
-                            🎻 ለልምምድ ይሂዱ
-
-                        </button>
-
-                    </div>
-
-
-                    ${
-                        selectedMezmur.meaning_en
-                            ? `
-                                <div
-                                    style="
-                                        margin-top:24px;
-                                        padding-top:18px;
-                                        border-top:
-                                            1px solid var(--border);
-                                    "
-                                >
-
-                                    <h3>
-                                        🇬🇧 English Meaning
-                                    </h3>
-
-                                    <div
-                                        class="muted"
-                                        style="
-                                            margin-top:10px;
-                                            line-height:1.8;
-                                            white-space:pre-wrap;
-                                        "
-                                    >
-
-                                        ${escapeHtml(
-                                            selectedMezmur.meaning_en
-                                        )}
-
-                                    </div>
-
-                                </div>
-                            `
-                            : ""
-                    }
-
-                </div>
-
-
-                <!-- LYRICS -->
-
-                <div class="card">
-
-                    <h3>
-                        📖 ግጥም
-                    </h3>
-
-
-                    ${
-                        selectedMezmur.lyrics_am
-
-                            ? `
-                                <div
-                                    style="
-                                        margin-top:14px;
-                                        font-size:19px;
-                                        line-height:2.15;
-                                        white-space:pre-wrap;
-                                    "
-                                >
-
-                                    ${escapeHtml(
-                                        selectedMezmur.lyrics_am
-                                    )}
-
-                                </div>
-                            `
-
-                            : `
-                                <div
-                                    class="empty-state"
-                                    style="
-                                        margin-top:16px;
-                                    "
-                                >
-
-                                    <div
-                                        style="
-                                            font-size:32px;
-                                        "
-                                    >
-                                        📖
-                                    </div>
-
-                                    <p class="muted">
-                                        ግጥም ገና አልተጨመረም።
-                                    </p>
-
-                                </div>
-                            `
-                    }
-
-                </div>
-
-
-            </div>
-
-        </div>
-    `;
 }
 
 
