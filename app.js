@@ -5276,9 +5276,13 @@ async function mezmurPage() {
 
     let mezmurs = [];
 
+
     const cachedMezmurs =
         typeof getOfflineContent === "function"
-            ? getOfflineContent("mezmur", [])
+            ? getOfflineContent(
+                "mezmur",
+                []
+            )
             : [];
 
 
@@ -5288,14 +5292,17 @@ async function mezmurPage() {
      * =========================================================
      */
 
-    if (!navigator.onLine) {
+    if (
+    !navigator.onLine ||
+    !supabaseClient
+) {
 
-        mezmurs =
-            Array.isArray(cachedMezmurs)
-                ? cachedMezmurs
-                : [];
+    mezmurs =
+        Array.isArray(cachedMezmurs)
+            ? cachedMezmurs
+            : [];
 
-    }
+}
 
 
     /*
@@ -5308,86 +5315,72 @@ async function mezmurPage() {
 
         try {
 
-            if (!supabaseClient) {
+    if (!supabaseClient || !navigator.onLine) {
 
-                mezmurs =
-                    Array.isArray(cachedMezmurs)
-                        ? cachedMezmurs
-                        : [];
+        mezmurs =
+            Array.isArray(cachedMezmurs)
+                ? cachedMezmurs
+                : [];
 
-            } else {
+    } else {
 
-                const {
-                    data,
-                    error
-                } =
-                    await supabaseClient
-                        .from("mezmur")
-                        .select(`
-                            id,
-                            title_am,
-                            title_en,
-                            lyrics_am,
-                            meaning_en,
-                            qenet,
-                            level,
-                            audio_path,
-                            published,
-                            created_at
-                        `)
-                        .eq("published", true)
-                        .order(
-                            "created_at",
-                            {
-                                ascending: false
-                            }
-                        );
+        const timeoutPromise =
+            new Promise((_, reject) => {
 
+                setTimeout(() => {
 
-                if (error) {
-
-                    console.warn(
-                        "⚠️ Student Mezmur loading failed. Using offline copy:",
-                        error
+                    reject(
+                        new Error(
+                            "Supabase request timed out"
+                        )
                     );
 
-                    mezmurs =
-                        Array.isArray(cachedMezmurs)
-                            ? cachedMezmurs
-                            : [];
+                }, 5000);
 
-                } else {
-
-                    mezmurs =
-                        Array.isArray(data)
-                            ? data
-                            : [];
+            });
 
 
-                    /*
-                     * SAVE MEZMUR FOR OFFLINE
-                     */
-
-                    if (
-                        typeof saveOfflineContent ===
-                        "function"
-                    ) {
-
-                        saveOfflineContent(
-                            "mezmur",
-                            mezmurs
-                        );
-
+        const supabasePromise =
+            supabaseClient
+                .from("mezmur")
+                .select(`
+                    id,
+                    title_am,
+                    title_en,
+                    lyrics_am,
+                    meaning_en,
+                    qenet,
+                    level,
+                    audio_path,
+                    published,
+                    created_at
+                `)
+                .eq(
+                    "published",
+                    true
+                )
+                .order(
+                    "created_at",
+                    {
+                        ascending: false
                     }
+                );
 
-                }
 
-            }
+        const {
+            data,
+            error
+        } =
+            await Promise.race([
+                supabasePromise,
+                timeoutPromise
+            ]);
 
-        } catch (error) {
+
+        if (error) {
 
             console.warn(
-                "⚠️ Student Mezmur request failed. Using offline copy:",
+                "⚠️ Mezmur failed. Using offline copy:",
                 error
             );
 
@@ -5396,7 +5389,43 @@ async function mezmurPage() {
                     ? cachedMezmurs
                     : [];
 
+        } else {
+
+            mezmurs =
+                Array.isArray(data)
+                    ? data
+                    : [];
+
+
+            if (
+                typeof saveOfflineContent ===
+                "function"
+            ) {
+
+                saveOfflineContent(
+                    "mezmur",
+                    mezmurs
+                );
+
+            }
+
         }
+
+    }
+
+} catch (error) {
+
+    console.warn(
+        "⚠️ Mezmur request failed. Using offline copy:",
+        error
+    );
+
+    mezmurs =
+        Array.isArray(cachedMezmurs)
+            ? cachedMezmurs
+            : [];
+
+}
 
     }
 
@@ -5459,7 +5488,7 @@ async function mezmurPage() {
 
     /*
      * =========================================================
-     * SELECTED MEZMUR
+     * SELECT MEZMUR
      * =========================================================
      */
 
@@ -5474,7 +5503,7 @@ async function mezmurPage() {
 
     /*
      * =========================================================
-     * RENDER MEZMUR
+     * PAGE
      * =========================================================
      */
 
@@ -5505,66 +5534,102 @@ async function mezmurPage() {
                     📚 የመዝሙር ዝርዝር
                 </h3>
 
+
                 <div
                     style="
                         display:grid;
                         gap:10px;
-                        margin-top:14px;
+                        margin-top:15px;
                     "
                 >
 
-                    ${
-                        mezmurs
-                            .map(
-                                mezmur => `
-                                    <button
-                                        type="button"
-                                        class="btn ${
-                                            mezmur.id ===
-                                            selectedMezmur.id
-                                                ? "primary"
-                                                : ""
-                                        }"
-                                        data-mezmur-id="${mezmur.id}"
-                                        style="
-                                            text-align:left;
-                                            width:100%;
-                                        "
-                                    >
+                    ${mezmurs.map(
+                        mezmur => `
 
-                                        <div>
+                            <button
+                                type="button"
+                                class="list-item"
+                                data-mezmur-id="${mezmur.id}"
+                                style="
+                                    text-align:left;
+                                    cursor:pointer;
+                                    width:100%;
+                                "
+                            >
 
-                                            <strong>
+                                <div
+                                    style="
+                                        display:flex;
+                                        justify-content:space-between;
+                                        align-items:center;
+                                        gap:12px;
+                                    "
+                                >
 
-                                                ${escapeHtml(
-                                                    mezmur.title_am ||
-                                                    "ያልተሰየመ"
-                                                )}
+                                    <div>
 
-                                            </strong>
+                                        <b>
+
+                                            ${escapeHtml(
+                                                state.language === "am"
+
+                                                    ? (
+                                                        mezmur.title_am ||
+                                                        mezmur.title_en ||
+                                                        ""
+                                                    )
+
+                                                    : (
+                                                        mezmur.title_en ||
+                                                        mezmur.title_am ||
+                                                        ""
+                                                    )
+                                            )}
+
+                                        </b>
 
 
-                                            ${
-                                                mezmur.title_en
-                                                    ? `
-                                                        <div class="muted">
+                                        <div class="muted">
 
-                                                            ${escapeHtml(
-                                                                mezmur.title_en
-                                                            )}
+                                            ${escapeHtml(
+                                                state.language === "am"
 
-                                                        </div>
-                                                    `
-                                                    : ""
-                                            }
+                                                    ? (
+                                                        mezmur.title_en ||
+                                                        ""
+                                                    )
+
+                                                    : (
+                                                        mezmur.title_am ||
+                                                        ""
+                                                    )
+                                            )}
 
                                         </div>
 
-                                    </button>
-                                `
-                            )
-                            .join("")
-                    }
+                                    </div>
+
+
+                                    ${
+                                        mezmur.qenet
+                                            ? `
+                                                <span class="pill gold">
+
+                                                    ${escapeHtml(
+                                                        mezmur.qenet
+                                                    )}
+
+                                                </span>
+                                            `
+                                            : ""
+                                    }
+
+                                </div>
+
+                            </button>
+
+                        `
+                    ).join("")}
 
                 </div>
 
@@ -5580,83 +5645,69 @@ async function mezmurPage() {
 
                 <div class="card">
 
-                    <div
-                        class="row"
-                        style="
-                            justify-content:space-between;
-                            align-items:flex-start;
-                            gap:12px;
-                        "
-                    >
+                    <h3>
 
-                        <div>
+                        🎵
+                        ${escapeHtml(
+                            state.language === "am"
 
-                            <span class="pill gold">
-                                🎵 መዝሙር
-                            </span>
-
-
-                            <h2 style="margin-top:12px;">
-
-                                ${escapeHtml(
+                                ? (
                                     selectedMezmur.title_am ||
-                                    "ያልተሰየመ"
-                                )}
+                                    selectedMezmur.title_en ||
+                                    ""
+                                )
 
-                            </h2>
+                                : (
+                                    selectedMezmur.title_en ||
+                                    selectedMezmur.title_am ||
+                                    ""
+                                )
+                        )}
 
-
-                            ${
-                                selectedMezmur.title_en
-                                    ? `
-                                        <div class="muted">
-
-                                            ${escapeHtml(
-                                                selectedMezmur.title_en
-                                            )}
-
-                                        </div>
-                                    `
-                                    : ""
-                            }
-
-                        </div>
+                    </h3>
 
 
-                        <div>
+                    ${
+                        selectedMezmur.qenet
+                            ? `
+                                <div
+                                    class="pill gold"
+                                    style="
+                                        margin-top:10px;
+                                    "
+                                >
 
-                            ${
-                                selectedMezmur.qenet
-                                    ? `
-                                        <span class="pill gold">
+                                    ${escapeHtml(
+                                        selectedMezmur.qenet
+                                    )}
 
-                                            🎼
-                                            ${escapeHtml(
-                                                selectedMezmur.qenet
-                                            )}
-
-                                        </span>
-                                    `
-                                    : ""
-                            }
+                                </div>
+                            `
+                            : ""
+                    }
 
 
-                            ${
-                                selectedMezmur.level
-                                    ? `
-                                        <span class="pill">
+                    ${
+                        selectedMezmur.level
+                            ? `
+                                <div
+                                    class="pill"
+                                    style="
+                                        margin-top:10px;
+                                    "
+                                >
 
-                                            Level
-                                            ${selectedMezmur.level}
+                                    Level
+                                    ${escapeHtml(
+                                        String(
+                                            selectedMezmur.level
+                                        )
+                                    )}
 
-                                        </span>
-                                    `
-                                    : ""
-                            }
-
-                        </div>
-
-                    </div>
+                                </div>
+                            `
+                            : ""
+                    }
 
 
                     <hr
@@ -5720,7 +5771,6 @@ async function mezmurPage() {
                                         🇬🇧 English Meaning
                                     </h3>
 
-
                                     <div
                                         class="muted"
                                         style="
@@ -5755,6 +5805,7 @@ async function mezmurPage() {
 
                     ${
                         selectedMezmur.lyrics_am
+
                             ? `
                                 <div
                                     style="
@@ -5771,6 +5822,7 @@ async function mezmurPage() {
 
                                 </div>
                             `
+
                             : `
                                 <div
                                     class="empty-state"
@@ -5786,7 +5838,6 @@ async function mezmurPage() {
                                     >
                                         📖
                                     </div>
-
 
                                     <p class="muted">
                                         ግጥም ገና አልተጨመረም።
