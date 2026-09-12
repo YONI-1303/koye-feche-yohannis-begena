@@ -133,7 +133,67 @@ self.addEventListener("fetch", event => {
 
     if (
         url.pathname.includes("/audio/begena/")
-    ) {
+    )
+    /*
+ * =========================================
+ * SUPABASE ANNOUNCEMENT AUDIO
+ * =========================================
+ */
+
+if (
+    url.pathname.includes(
+        "/storage/v1/object/sign/announcement-audio/"
+    )
+) {
+
+    event.respondWith(
+
+        caches.match(request).then(
+            cachedResponse => {
+
+                if (cachedResponse) {
+                    return cachedResponse;
+                }
+
+                return fetch(request)
+                    .then(response => {
+
+                        if (
+                            response &&
+                            (
+                                response.ok ||
+                                response.type === "opaque"
+                            )
+                        ) {
+
+                            const clone =
+                                response.clone();
+
+                            caches.open(
+                                CACHE_NAME
+                            ).then(cache => {
+
+                                cache.put(
+                                    request,
+                                    clone
+                                );
+
+                            });
+
+                        }
+
+                        return response;
+
+                    });
+
+            }
+        )
+
+    );
+
+    return;
+}
+    {
 
         event.respondWith(
 

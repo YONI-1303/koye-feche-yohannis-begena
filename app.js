@@ -251,7 +251,376 @@ function escapeHtml(value) {
 const OFFLINE_STUDENT_KEY =
     "koye_feche_offline_student_v1";
 
+async function cacheStudentOfflineContent() {
 
+    if (
+        !supabaseClient ||
+        !window.currentUser ||
+        window.currentUser.offline ||
+        window.currentProfile?.role !== "student"
+    ) {
+
+        return;
+
+    }
+
+    const userId =
+        window.currentUser.id;
+
+    const classId =
+        state.currentClass?.id;
+
+    if (!classId) {
+
+        console.warn(
+            "⚠️ Cannot cache student content: no class ID."
+        );
+
+        return;
+
+    }
+
+    console.log(
+        "📦 Saving student offline content..."
+    );
+
+
+    /* =========================
+       ATTENDANCE
+    ========================= */
+
+    try {
+
+        await loadStudentAttendance(
+            userId
+        );
+
+    } catch (error) {
+
+        console.warn(
+            "Attendance offline cache failed:",
+            error
+        );
+
+    }
+
+
+    /* =========================
+       MEZMUR
+    ========================= */
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await supabaseClient
+                .from("mezmur")
+                .select(`
+                    id,
+                    title_am,
+                    title_en,
+                    lyrics_am,
+                    meaning_en,
+                    qenet,
+                    level,
+                    audio_path,
+                    published,
+                    created_at
+                `)
+                .eq(
+                    "published",
+                    true
+                )
+                .order(
+                    "created_at",
+                    {
+                        ascending: false
+                    }
+                );
+
+        if (!error) {
+
+            saveOfflineContent(
+                "mezmur",
+                data || []
+            );
+
+        }
+
+    } catch (error) {
+
+        console.warn(
+            "Mezmur offline cache failed:",
+            error
+        );
+
+    }
+
+
+    /* =========================
+       TUTOR
+    ========================= */
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await supabaseClient
+                .from("lessons")
+                .select(`
+                    id,
+                    title_am,
+                    title_en,
+                    body_am,
+                    body_en,
+                    level,
+                    lesson_number,
+                    action_type,
+                    action_target
+                `)
+                .eq(
+                    "class_id",
+                    classId
+                )
+                .eq(
+                    "published",
+                    true
+                )
+                .order(
+                    "lesson_number",
+                    {
+                        ascending: true
+                    }
+                );
+
+        if (!error) {
+
+            saveOfflineContent(
+                `lessons_${classId}`,
+                data || []
+            );
+
+        }
+
+    } catch (error) {
+
+        console.warn(
+            "Tutor offline cache failed:",
+            error
+        );
+
+    }
+
+
+    /* =========================
+       ASSIGNMENTS
+    ========================= */
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await supabaseClient
+                .from("assignments")
+                .select(`
+                    id,
+                    title_am,
+                    title_en,
+                    instructions_am,
+                    instructions_en,
+                    due_at,
+                    status,
+                    created_at
+                `)
+                .eq(
+                    "class_id",
+                    classId
+                )
+                .order(
+                    "created_at",
+                    {
+                        ascending: false
+                    }
+                );
+
+        if (!error) {
+
+            saveOfflineContent(
+                `assignments_${classId}`,
+                data || []
+            );
+
+        }
+
+    } catch (error) {
+
+        console.warn(
+            "Assignments offline cache failed:",
+            error
+        );
+
+    }
+
+
+    /* =========================
+       LEADERBOARD
+    ========================= */
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await supabaseClient.rpc(
+                "get_class_leaderboard",
+                {
+                    p_class_id: classId
+                }
+            );
+
+        if (!error) {
+
+            saveOfflineContent(
+                `leaderboard_${classId}`,
+                data || []
+            );
+
+        }
+
+    } catch (error) {
+
+        console.warn(
+            "Leaderboard offline cache failed:",
+            error
+        );
+
+    }
+
+
+    /* =========================
+       ANNOUNCEMENTS
+    ========================= */
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await supabaseClient
+                .from("announcements")
+                .select(`
+                    id,
+                    title,
+                    body,
+                    audio_path,
+                    published_at,
+                    created_at
+                `)
+                .eq(
+                    "target_class_id",
+                    classId
+                )
+                .eq(
+                    "published",
+                    true
+                )
+                .order(
+                    "published_at",
+                    {
+                        ascending: false
+                    }
+                );
+
+        if (!error) {
+
+            const announcementList =
+                data || [];
+
+            for (
+                const announcement
+                of announcementList
+            ) {
+
+                announcement._offlineAudioUrl =
+                    "";
+
+                if (
+                    announcement.audio_path
+                ) {
+
+                    try {
+
+                        const {
+                            data: signedData,
+                            error: signedError
+                        } =
+                            await supabaseClient
+                                .storage
+                                .from(
+                                    "announcement-audio"
+                                )
+                                .createSignedUrl(
+                                    announcement.audio_path,
+                                    3600
+                                );
+
+                        if (
+                            !signedError
+                        ) {
+
+                            announcement
+                                ._offlineAudioUrl =
+                                    signedData
+                                        ?.signedUrl ||
+                                    "";
+
+                        }
+
+                    } catch (
+                        audioError
+                    ) {
+
+                        console.warn(
+                            "Announcement audio cache failed:",
+                            audioError
+                        );
+
+                    }
+
+                }
+
+            }
+
+            saveOfflineContent(
+                `announcements_${classId}`,
+                announcementList
+            );
+
+        }
+
+    } catch (error) {
+
+        console.warn(
+            "Announcements offline cache failed:",
+            error
+        );
+
+    }
+
+
+    console.log(
+        "✅ Student offline content saved"
+    );
+
+}
 function arrayBufferToBase64(buffer) {
 
     const bytes =
@@ -268,6 +637,96 @@ function arrayBufferToBase64(buffer) {
     );
 
     return btoa(binary);
+
+}
+/* =========================================================
+   OFFLINE STUDENT CONTENT CACHE
+========================================================= */
+
+const OFFLINE_CONTENT_PREFIX =
+    "kfy_student_content_v1:";
+
+
+function saveOfflineContent(
+    key,
+    data
+) {
+
+    try {
+
+        localStorage.setItem(
+            OFFLINE_CONTENT_PREFIX + key,
+            JSON.stringify({
+                version: 1,
+                savedAt:
+                    new Date().toISOString(),
+                data: data
+            })
+        );
+
+        console.log(
+            "✅ Offline content saved:",
+            key
+        );
+
+        return true;
+
+    } catch (error) {
+
+        console.error(
+            "❌ Offline content save failed:",
+            key,
+            error
+        );
+
+        return false;
+
+    }
+
+}
+
+
+function getOfflineContent(
+    key,
+    fallback = null
+) {
+
+    try {
+
+        const raw =
+            localStorage.getItem(
+                OFFLINE_CONTENT_PREFIX + key
+            );
+
+        if (!raw) {
+            return fallback;
+        }
+
+        const parsed =
+            JSON.parse(raw);
+
+        if (
+            !parsed ||
+            parsed.version !== 1
+        ) {
+
+            return fallback;
+
+        }
+
+        return parsed.data;
+
+    } catch (error) {
+
+        console.error(
+            "❌ Offline content read failed:",
+            key,
+            error
+        );
+
+        return fallback;
+
+    }
 
 }
 
@@ -1113,14 +1572,28 @@ async function loadStudentAttendance(userId) {
         [];
 
 
-    if (
-        !supabaseClient ||
-        !userId
-    ) {
+    if (!userId) {
 
-        return [];
+    return [];
 
-    }
+}
+
+if (!supabaseClient) {
+
+    const cachedAttendance =
+        getOfflineContent(
+            `attendance_${userId}`,
+            []
+        );
+
+    state.studentAttendance =
+        Array.isArray(cachedAttendance)
+            ? cachedAttendance
+            : [];
+
+    return state.studentAttendance;
+
+}
 
 
     try {
@@ -1158,18 +1631,33 @@ async function loadStudentAttendance(userId) {
 
         if (error) {
 
-            console.warn(
-                "⚠️ Student attendance lookup failed:",
-                error.message
-            );
+    console.warn(
+        "⚠️ Student attendance lookup failed:",
+        error.message
+    );
 
-            return [];
+    const cachedAttendance =
+        getOfflineContent(
+            `attendance_${userId}`,
+            []
+        );
 
-        }
+    state.studentAttendance =
+        Array.isArray(cachedAttendance)
+            ? cachedAttendance
+            : [];
+
+    return state.studentAttendance;
+
+}
 
 
         state.studentAttendance =
             data || [];
+            saveOfflineContent(
+    `attendance_${userId}`,
+    state.studentAttendance
+);
 
 
         return state.studentAttendance;
@@ -2255,6 +2743,24 @@ await saveOfflineStudentCredentials(
     user,
     profile
 );
+if (
+    profile.role === "student"
+) {
+
+    try {
+
+        await cacheStudentOfflineContent();
+
+    } catch (error) {
+
+        console.warn(
+            "⚠️ Offline content cache warm-up failed:",
+            error
+        );
+
+    }
+
+}
 
 await showApp();
 
@@ -4762,16 +5268,95 @@ const mezmurLibrary = [
 const activeMezmur = mezmurLibrary[0];
 async function mezmurPage() {
 
-    if (!supabaseClient) {
-        return `
-            <div class="card">
-                <h3>🎵 መዝሙር</h3>
-                <p class="muted">
-                    Supabase is unavailable.
-                </p>
-            </div>
-        `;
+    let mezmur = [];
+
+const cachedMezmurs =
+    getOfflineContent(
+        "mezmur",
+        []
+    );
+
+if (
+    !supabaseClient
+) {
+
+    mezmurs =
+        Array.isArray(cachedMezmurs)
+            ? cachedMezmurs
+            : [];
+
+} else {
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await supabaseClient
+                .from("mezmur")
+                .select(`
+                    id,
+                    title_am,
+                    title_en,
+                    lyrics_am,
+                    meaning_en,
+                    qenet,
+                    level,
+                    audio_path,
+                    published,
+                    created_at
+                `)
+                .eq(
+                    "published",
+                    true
+                )
+                .order(
+                    "created_at",
+                    {
+                        ascending: false
+                    }
+                );
+
+        if (error) {
+
+            console.error(
+                "❌ Student Mezmur loading failed:",
+                error
+            );
+
+            mezmurs =
+                Array.isArray(cachedMezmurs)
+                    ? cachedMezmurs
+                    : [];
+
+        } else {
+
+            mezmurs =
+                data || [];
+
+            saveOfflineContent(
+                "mezmur",
+                mezmurs
+            );
+
+        }
+
+    } catch (error) {
+
+        console.error(
+            "❌ Student Mezmur request failed:",
+            error
+        );
+
+        mezmurs =
+            Array.isArray(cachedMezmurs)
+                ? cachedMezmurs
+                : [];
+
     }
+
+}
 
     let mezmurs = [];
 
@@ -5317,16 +5902,6 @@ async function completeLesson(lessonId) {
     return true;
 }
 async function tutorPage() {
-    if (!supabaseClient) {
-        return `
-            <div class="card">
-                <h3>🎓 በገና መማሪያ</h3>
-                <div class="muted">
-                    Supabase unavailable.
-                </div>
-            </div>
-        `;
-    }
 
     const user = window.currentUser;
 
@@ -5341,82 +5916,255 @@ async function tutorPage() {
         `;
     }
 
-    let classId = state.currentClass?.id;
 
-    if (!classId && typeof loadStudentClass === "function") {
+    /* =========================================================
+       GET STUDENT CLASS
+    ========================================================= */
+
+    let classId =
+        state.currentClass?.id || null;
+
+
+    if (
+        !classId &&
+        typeof loadStudentClass === "function" &&
+        navigator.onLine
+    ) {
+
         try {
-            await loadStudentClass(user.id);
-            classId = state.currentClass?.id;
+
+            await loadStudentClass(
+                user.id
+            );
+
+            classId =
+                state.currentClass?.id || null;
+
         } catch (error) {
-            console.error("Student class load failed:", error);
+
+            console.error(
+                "Student class load failed:",
+                error
+            );
+
         }
+
     }
 
+
+    /* =========================================================
+       NO CLASS
+    ========================================================= */
+
     if (!classId) {
+
         return `
             <div class="card">
                 <h3>🎓 በገና መማሪያ</h3>
+
                 <div class="muted">
                     ክፍል አልተገኘም።
                 </div>
             </div>
         `;
+
     }
 
-    const { data: lessons, error } = await supabaseClient
-        .from("lessons")
-        .select(`
-            id,
-            title_am,
-            title_en,
-            body_am,
-            body_en,
-            level,
-            lesson_number,
-            action_type,
-            action_target
-        `)
-        .eq("class_id", classId)
-        .eq("published", true)
-        .order("lesson_number", { ascending: true });
 
-    if (error) {
-        console.error("Tutor lessons load failed:", error);
+    /* =========================================================
+       LOAD CACHED LESSONS FIRST
+    ========================================================= */
 
-        return `
-            <div class="card">
-                <h3>🎓 በገና መማሪያ</h3>
-                <div class="muted">
-                    ትምህርቶችን መጫን አልተቻለም።
-                </div>
-            </div>
-        `;
+    let lessonList = [];
+
+
+    const cachedLessons =
+        typeof getOfflineContent === "function"
+            ? getOfflineContent(
+                `lessons_${classId}`,
+                []
+            )
+            : [];
+
+
+    /* =========================================================
+       OFFLINE MODE
+    ========================================================= */
+
+    if (!navigator.onLine) {
+
+        lessonList =
+            Array.isArray(cachedLessons)
+                ? cachedLessons
+                : [];
+
     }
 
-    const lessonList = lessons || [];
+
+    /* =========================================================
+       ONLINE MODE
+    ========================================================= */
+
+    else {
+
+        try {
+
+            const {
+                data,
+                error
+            } =
+                await supabaseClient
+                    .from("lessons")
+                    .select(`
+                        id,
+                        title_am,
+                        title_en,
+                        body_am,
+                        body_en,
+                        level,
+                        lesson_number,
+                        action_type,
+                        action_target
+                    `)
+                    .eq(
+                        "class_id",
+                        classId
+                    )
+                    .eq(
+                        "published",
+                        true
+                    )
+                    .order(
+                        "lesson_number",
+                        {
+                            ascending: true
+                        }
+                    );
+
+
+            /* =================================================
+               SUPABASE ERROR
+            ================================================= */
+
+            if (error) {
+
+                console.warn(
+                    "⚠️ Tutor lessons online load failed:",
+                    error
+                );
+
+
+                /*
+                 * USE OFFLINE COPY
+                 */
+
+                lessonList =
+                    Array.isArray(cachedLessons)
+                        ? cachedLessons
+                        : [];
+
+            }
+
+
+            /* =================================================
+               SUCCESS
+            ================================================= */
+
+            else {
+
+                lessonList =
+                    Array.isArray(data)
+                        ? data
+                        : [];
+
+
+                /*
+                 * SAVE FOR OFFLINE USE
+                 */
+
+                if (
+                    typeof saveOfflineContent ===
+                    "function"
+                ) {
+
+                    saveOfflineContent(
+                        `lessons_${classId}`,
+                        lessonList
+                    );
+
+                }
+
+            }
+
+        } catch (error) {
+
+            console.warn(
+                "⚠️ Tutor lessons request failed. Using offline copy:",
+                error
+            );
+
+
+            /*
+             * FALL BACK TO SAVED LESSONS
+             */
+
+            lessonList =
+                Array.isArray(cachedLessons)
+                    ? cachedLessons
+                    : [];
+
+        }
+
+    }
+
+
+    /* =========================================================
+       NO LESSONS
+    ========================================================= */
 
     if (!lessonList.length) {
+
         return `
             <div class="card">
                 <h3>🎓 በገና መማሪያ</h3>
 
-                <div class="muted" style="margin-top:8px;">
-                    እስካሁን የታተመ ትምህርት የለም።
+                <div
+                    class="muted"
+                    style="margin-top:8px;"
+                >
+                    ${
+                        navigator.onLine
+                            ? "እስካሁን የታተመ ትምህርት የለም።"
+                            : "ከመስመር ውጭ የተቀመጠ ትምህርት የለም። እባክዎ በመጀመሪያ ኢንተርኔት ላይ ትምህርቶቹን ይክፈቱ።"
+                    }
                 </div>
             </div>
         `;
+
     }
+
+
+    /* =========================================================
+       RENDER TUTOR
+    ========================================================= */
 
     return `
         <div class="card">
+
             <h3>🎓 በገና መማሪያ</h3>
 
             <div class="muted">
                 የትምህርት ክፍሎች
             </div>
 
-            <div class="list" style="margin-top:15px;">
+
+            <div
+                class="list"
+                style="margin-top:15px;"
+            >
+
                 ${lessonList.map(lesson => `
+
                     <div
                         class="list-item"
                         style="
@@ -5426,27 +6174,58 @@ async function tutorPage() {
                             align-items:center;
                         "
                     >
+
                         <div class="pill gold">
-                            ${String(lesson.lesson_number).padStart(2, "0")}
+
+                            ${String(
+                                lesson.lesson_number
+                            ).padStart(
+                                2,
+                                "0"
+                            )}
+
                         </div>
+
 
                         <div>
+
                             <b>
+
                                 ${escapeHtml(
                                     state.language === "am"
-                                        ? (lesson.title_am || lesson.title_en || "")
-                                        : (lesson.title_en || lesson.title_am || "")
+                                        ? (
+                                            lesson.title_am ||
+                                            lesson.title_en ||
+                                            ""
+                                        )
+                                        : (
+                                            lesson.title_en ||
+                                            lesson.title_am ||
+                                            ""
+                                        )
                                 )}
+
                             </b>
 
+
                             <div class="muted">
+
                                 ${escapeHtml(
                                     state.language === "am"
-                                        ? (lesson.title_en || "")
-                                        : (lesson.title_am || "")
+                                        ? (
+                                            lesson.title_en ||
+                                            ""
+                                        )
+                                        : (
+                                            lesson.title_am ||
+                                            ""
+                                        )
                                 )}
+
                             </div>
+
                         </div>
+
 
                         <button
                             type="button"
@@ -5455,14 +6234,19 @@ async function tutorPage() {
                         >
                             ጀምር
                         </button>
+
                     </div>
+
                 `).join("")}
+
             </div>
+
 
             <div
                 id="lesson-viewer"
                 style="margin-top:20px;"
             ></div>
+
         </div>
     `;
 }
@@ -5474,100 +6258,299 @@ async function tutorPage() {
 
 async function assignmentsPage() {
 
-    if (!supabaseClient || !window.currentUser) {
+    if (!window.currentUser) {
+
         return `
             <div class="card">
+
                 <h3>📝 የእኔ ስራዎች</h3>
 
                 <div class="list-item">
-                    <b>ስራዎችን መጫን አልተቻለም</b>
+
+                    <b>
+                        ስራዎችን መጫን አልተቻለም
+                    </b>
+
                 </div>
+
             </div>
         `;
+
     }
+
 
     try {
 
-        const userId = window.currentUser.id;
+        const userId =
+            window.currentUser.id;
 
-        // Get the student's active class
-        const { data: enrollment, error: enrollmentError } =
-            await supabaseClient
-                .from("enrollments")
-                .select("class_id")
-                .eq("student_id", userId)
-                .eq("status", "active")
-                .order("joined_at", { ascending: false })
-                .limit(1)
-                .maybeSingle();
 
-        if (enrollmentError) {
-            console.error(
-                "❌ Enrollment loading failed:",
-                enrollmentError
-            );
+        /* =====================================================
+           GET STUDENT CLASS
+        ===================================================== */
 
-            return `
-                <div class="card">
-                    <h3>📝 የእኔ ስራዎች</h3>
-                    <div class="list-item">
-                        <b>ስራዎችን መጫን አልተቻለም</b>
-                    </div>
-                </div>
-            `;
+        let classId =
+            state.currentClass?.id || null;
+
+
+        /*
+         * ONLINE:
+         * If class is not already in state, get it from Supabase.
+         */
+
+        if (
+            !classId &&
+            navigator.onLine &&
+            supabaseClient
+        ) {
+
+            try {
+
+                const {
+                    data: enrollmentData,
+                    error: enrollmentError
+                } =
+                    await supabaseClient
+                        .from("enrollments")
+                        .select(
+                            "class_id"
+                        )
+                        .eq(
+                            "student_id",
+                            userId
+                        )
+                        .eq(
+                            "status",
+                            "active"
+                        )
+                        .order(
+                            "joined_at",
+                            {
+                                ascending: false
+                            }
+                        )
+                        .limit(1)
+                        .maybeSingle();
+
+
+                if (enrollmentError) {
+
+                    console.warn(
+                        "⚠️ Enrollment loading failed:",
+                        enrollmentError
+                    );
+
+                } else {
+
+                    classId =
+                        enrollmentData?.class_id ||
+                        null;
+
+                }
+
+            } catch (error) {
+
+                console.warn(
+                    "⚠️ Enrollment request failed:",
+                    error
+                );
+
+            }
+
         }
 
-        if (!enrollment) {
+
+        /* =====================================================
+           NO CLASS
+        ===================================================== */
+
+        if (!classId) {
+
             return `
                 <div class="card">
-                    <h3>📝 የእኔ ስራዎች</h3>
+
+                    <h3>
+                        📝 የእኔ ስራዎች
+                    </h3>
 
                     <div class="list-item">
-                        <b>ክፍል አልተመደበም</b>
+
+                        <b>
+                            ክፍል አልተመደበም
+                        </b>
 
                         <div class="muted">
-                            እስካሁን ወደ ክፍል አልተመደቡም።
+
+                            እስካሁን
+                            ወደ ክፍል
+                            አልተመደቡም።
+
                         </div>
+
                     </div>
+
                 </div>
             `;
+
         }
 
-        // Get assignments for the student's class
-        const { data: assignments, error: assignmentsError } =
-            await supabaseClient
-                .from("assignments")
-                .select(`
-                    id,
-                    title_am,
-                    title_en,
-                    instructions_am,
-                    instructions_en,
-                    due_at,
-                    status,
-                    created_at
-                `)
-                .eq("class_id", enrollment.class_id)
-                .order("created_at", { ascending: false });
 
-        if (assignmentsError) {
-            console.error(
-                "❌ Assignments loading failed:",
-                assignmentsError
-            );
+        /* =====================================================
+           GET OFFLINE ASSIGNMENTS
+        ===================================================== */
 
-            return `
-                <div class="card">
-                    <h3>📝 የእኔ ስራዎች</h3>
+        let assignments = [];
 
-                    <div class="list-item">
-                        <b>ስራዎችን መጫን አልተቻለም</b>
-                    </div>
-                </div>
-            `;
+
+        const cachedAssignments =
+            typeof getOfflineContent ===
+            "function"
+                ? getOfflineContent(
+                    `assignments_${classId}`,
+                    []
+                )
+                : [];
+
+
+        /* =====================================================
+           OFFLINE
+        ===================================================== */
+
+        if (!navigator.onLine) {
+
+            assignments =
+                Array.isArray(
+                    cachedAssignments
+                )
+                    ? cachedAssignments
+                    : [];
+
         }
 
-        if (!assignments || assignments.length === 0) {
+
+        /* =====================================================
+           ONLINE
+        ===================================================== */
+
+        else {
+
+            try {
+
+                if (!supabaseClient) {
+
+                    assignments =
+                        Array.isArray(
+                            cachedAssignments
+                        )
+                            ? cachedAssignments
+                            : [];
+
+                } else {
+
+                    const {
+                        data,
+                        error:
+                            assignmentsError
+                    } =
+                        await supabaseClient
+                            .from(
+                                "assignments"
+                            )
+                            .select(`
+                                id,
+                                title_am,
+                                title_en,
+                                instructions_am,
+                                instructions_en,
+                                due_at,
+                                status,
+                                created_at
+                            `)
+                            .eq(
+                                "class_id",
+                                classId
+                            )
+                            .order(
+                                "created_at",
+                                {
+                                    ascending: false
+                                }
+                            );
+
+
+                    if (assignmentsError) {
+
+                        console.warn(
+                            "⚠️ Assignments loading failed. Using offline copy:",
+                            assignmentsError
+                        );
+
+
+                        assignments =
+                            Array.isArray(
+                                cachedAssignments
+                            )
+                                ? cachedAssignments
+                                : [];
+
+                    } else {
+
+                        assignments =
+                            Array.isArray(data)
+                                ? data
+                                : [];
+
+
+                        /*
+                         * SAVE ASSIGNMENTS
+                         * FOR OFFLINE USE
+                         */
+
+                        if (
+                            typeof saveOfflineContent ===
+                            "function"
+                        ) {
+
+                            saveOfflineContent(
+                                `assignments_${classId}`,
+                                assignments
+                            );
+
+                        }
+
+                    }
+
+                }
+
+            } catch (error) {
+
+                console.warn(
+                    "⚠️ Assignment request failed. Using offline copy:",
+                    error
+                );
+
+
+                assignments =
+                    Array.isArray(
+                        cachedAssignments
+                    )
+                        ? cachedAssignments
+                        : [];
+
+            }
+
+        }
+
+
+        /* =====================================================
+           NO ASSIGNMENTS
+        ===================================================== */
+
+        if (
+            !assignments ||
+            assignments.length === 0
+        ) {
+
             return `
                 <div class="grid two">
 
@@ -5582,13 +6565,26 @@ async function assignmentsPage() {
                             <div class="list-item">
 
                                 <b>
-                                    ምንም ስራ አልተመደበም
+
+                                    ${
+                                        navigator.onLine
+                                            ? "ምንም ስራ አልተመደበም"
+                                            : "ከመስመር ውጭ የተቀመጠ ስራ የለም"
+
+                                    }
+
                                 </b>
 
                                 <div class="muted">
-                                    አስተማሪዎ ስራ
-                                    ሲመድብ እዚህ
-                                    ይታያል።
+
+                                    ${
+                                        navigator.onLine
+
+                                            ? "አስተማሪዎ ስራ ሲመድብ እዚህ ይታያል።"
+
+                                            : "እባክዎ በመጀመሪያ ኢንተርኔት ላይ ስራዎቹን ይክፈቱ።"
+                                    }
+
                                 </div>
 
                             </div>
@@ -5599,50 +6595,116 @@ async function assignmentsPage() {
 
                 </div>
             `;
+
         }
 
-        const assignmentItems = assignments.map(assignment => {
 
-            const title =
-                state.language === "en"
-                    ? (assignment.title_en || assignment.title_am)
-                    : assignment.title_am;
+        /* =====================================================
+           CREATE ASSIGNMENT CARDS
+        ===================================================== */
 
-            const instructions =
-                state.language === "en"
-                    ? (assignment.instructions_en || assignment.instructions_am)
-                    : assignment.instructions_am;
+        const assignmentItems =
+            assignments
+                .map(assignment => {
 
-            const dueDate = assignment.due_at
-                ? new Date(assignment.due_at).toLocaleString()
-                : "No deadline";
+                    const title =
+                        state.language === "en"
 
-            return `
-                <div class="list-item">
+                            ? (
+                                assignment.title_en ||
+                                assignment.title_am
+                            )
 
-                    <b>
-                        ${title || "Assignment"}
-                    </b>
+                            : (
+                                assignment.title_am ||
+                                assignment.title_en
+                            );
 
-                    <div class="muted">
-                        ${instructions || ""}
-                    </div>
 
-                    <div class="muted">
-                        📅 ${dueDate}
-                    </div>
+                    const instructions =
+                        state.language === "en"
 
-                    <button
-                        class="primary-btn assignment-submit-btn"
-                        data-assignment-id="${assignment.id}"
-                    >
-                        📤 ስራ ላክ
-                    </button>
+                            ? (
+                                assignment.instructions_en ||
+                                assignment.instructions_am
+                            )
 
-                </div>
-            `;
+                            : (
+                                assignment.instructions_am ||
+                                assignment.instructions_en
+                            );
 
-        }).join("");
+
+                    const dueDate =
+                        assignment.due_at
+
+                            ? new Date(
+                                assignment.due_at
+                            ).toLocaleString()
+
+                            : "No deadline";
+
+
+                    return `
+                        <div
+                            class="list-item"
+                        >
+
+                            <b>
+
+                                ${escapeHtml(
+                                    title ||
+                                    "Assignment"
+                                )}
+
+                            </b>
+
+
+                            <div class="muted">
+
+                                ${escapeHtml(
+                                    instructions ||
+                                    ""
+                                )}
+
+                            </div>
+
+
+                            <div class="muted">
+
+                                📅
+                                ${escapeHtml(
+                                    dueDate
+                                )}
+
+                            </div>
+
+
+                            <button
+                                class="primary-btn assignment-submit-btn"
+                                data-assignment-id="${assignment.id}"
+                                ${!navigator.onLine ? "disabled" : ""}
+                            >
+
+                                📤
+                                ${
+                                    navigator.onLine
+                                        ? "ስራ ላክ"
+                                        : "በመስመር ላይ ሲሆኑ ስራ ይላኩ"
+                                }
+
+                            </button>
+
+                        </div>
+                    `;
+
+                })
+                .join("");
+
+
+        /* =====================================================
+           RETURN PAGE
+        ===================================================== */
 
         return `
             <div class="grid two">
@@ -5653,8 +6715,11 @@ async function assignmentsPage() {
                         📝 የእኔ ስራዎች
                     </h3>
 
+
                     <div class="list">
+
                         ${assignmentItems}
+
                     </div>
 
                 </div>
@@ -5662,12 +6727,14 @@ async function assignmentsPage() {
             </div>
         `;
 
+
     } catch (error) {
 
         console.error(
             "❌ Assignment page failed:",
             error
         );
+
 
         return `
             <div class="card">
@@ -5677,12 +6744,18 @@ async function assignmentsPage() {
                 </h3>
 
                 <div class="list-item">
-                    <b>Something went wrong.</b>
+
+                    <b>
+                        Something went wrong.
+                    </b>
+
                 </div>
 
             </div>
         `;
+
     }
+
 }
 
 
@@ -6878,150 +7951,412 @@ function announcementsPage() {
 
 }
 async function studentAnnouncementsPage() {
+
     const classId =
         state.currentClass?.id ||
         state.studentClass?.id;
 
+
+    /* =========================================================
+       NO CLASS
+    ========================================================= */
+
     if (!classId) {
+
         return `
             <div class="card">
+
                 <h3>📢 ማስታወቂያ</h3>
+
                 <div class="muted">
                     ክፍል አልተገኘም።
                 </div>
+
             </div>
         `;
+
     }
 
-    const {
-        data: announcements,
-        error
-    } = await supabaseClient
-        .from("announcements")
-        .select(`
-            id,
-            title,
-            body,
-            audio_path,
-            published_at,
-            created_at
-        `)
-        .eq("target_class_id", classId)
-        .eq("published", true)
-        .order("published_at", {
-            ascending: false
-        });
 
-    if (error) {
-        console.error(
-            "❌ STUDENT ANNOUNCEMENTS ERROR:",
-            error
-        );
+    /* =========================================================
+       GET SAVED OFFLINE ANNOUNCEMENTS
+    ========================================================= */
+
+    const cachedAnnouncements =
+        typeof getOfflineContent === "function"
+            ? getOfflineContent(
+                `announcements_${classId}`,
+                []
+            )
+            : [];
+
+
+    let announcements = [];
+
+
+    /* =========================================================
+       OFFLINE
+    ========================================================= */
+
+    if (!navigator.onLine) {
+
+        announcements =
+            Array.isArray(cachedAnnouncements)
+                ? cachedAnnouncements
+                : [];
+
+    }
+
+
+    /* =========================================================
+       ONLINE
+    ========================================================= */
+
+    else {
+
+        try {
+
+            if (!supabaseClient) {
+
+                announcements =
+                    Array.isArray(cachedAnnouncements)
+                        ? cachedAnnouncements
+                        : [];
+
+            } else {
+
+                const {
+                    data,
+                    error
+                } =
+                    await supabaseClient
+                        .from("announcements")
+                        .select(`
+                            id,
+                            title,
+                            body,
+                            audio_path,
+                            published_at,
+                            created_at
+                        `)
+                        .eq(
+                            "target_class_id",
+                            classId
+                        )
+                        .eq(
+                            "published",
+                            true
+                        )
+                        .order(
+                            "published_at",
+                            {
+                                ascending: false
+                            }
+                        );
+
+
+                /* =================================================
+                   SUPABASE ERROR
+                ================================================= */
+
+                if (error) {
+
+                    console.warn(
+                        "⚠️ Announcements failed. Using offline copy:",
+                        error
+                    );
+
+                    announcements =
+                        Array.isArray(
+                            cachedAnnouncements
+                        )
+                            ? cachedAnnouncements
+                            : [];
+
+                }
+
+
+                /* =================================================
+                   SUCCESS
+                ================================================= */
+
+                else {
+
+                    announcements =
+                        Array.isArray(data)
+                            ? data
+                            : [];
+
+
+                    /*
+                     * Get audio URLs while online.
+                     */
+
+                    for (
+                        const announcement
+                        of announcements
+                    ) {
+
+                        announcement._offlineAudioUrl =
+                            "";
+
+
+                        if (
+                            announcement.audio_path
+                        ) {
+
+                            try {
+
+                                const {
+                                    data:
+                                        signedData,
+                                    error:
+                                        signedError
+                                } =
+                                    await supabaseClient
+                                        .storage
+                                        .from(
+                                            "announcement-audio"
+                                        )
+                                        .createSignedUrl(
+                                            announcement.audio_path,
+                                            3600
+                                        );
+
+
+                                if (
+                                    !signedError
+                                ) {
+
+                                    announcement
+                                        ._offlineAudioUrl =
+                                            signedData
+                                                ?.signedUrl ||
+                                            "";
+
+                                }
+
+                            } catch (
+                                audioError
+                            ) {
+
+                                console.warn(
+                                    "⚠️ Announcement audio URL failed:",
+                                    audioError
+                                );
+
+                            }
+
+                        }
+
+                    }
+
+
+                    /*
+                     * SAVE EVERYTHING
+                     * FOR OFFLINE USE
+                     */
+
+                    if (
+                        typeof saveOfflineContent ===
+                        "function"
+                    ) {
+
+                        saveOfflineContent(
+                            `announcements_${classId}`,
+                            announcements
+                        );
+
+                    }
+
+                }
+
+            }
+
+        } catch (error) {
+
+            console.warn(
+                "⚠️ Announcements request failed. Using offline copy:",
+                error
+            );
+
+
+            announcements =
+                Array.isArray(
+                    cachedAnnouncements
+                )
+                    ? cachedAnnouncements
+                    : [];
+
+        }
+
+    }
+
+
+    /* =========================================================
+       NO ANNOUNCEMENTS
+    ========================================================= */
+
+    if (
+        !announcements ||
+        announcements.length === 0
+    ) {
 
         return `
             <div class="card">
+
                 <h3>📢 ማስታወቂያ</h3>
+
                 <div class="muted">
-                    ማስታወቂያዎችን መጫን አልተቻለም።
+
+                    ${
+                        navigator.onLine
+                            ? "እስካሁን ማስታወቂያ የለም።"
+                            : "ከመስመር ውጭ የተቀመጠ ማስታወቂያ የለም።"
+                    }
+
                 </div>
+
             </div>
         `;
+
     }
 
-    if (!announcements?.length) {
-        return `
-            <div class="card">
-                <h3>📢 ማስታወቂያ</h3>
-                <div class="muted">
-                    እስካሁን ማስታወቂያ የለም።
-                </div>
-            </div>
-        `;
-    }
+
+    /* =========================================================
+       BUILD ANNOUNCEMENTS
+    ========================================================= */
 
     const items = [];
 
-    for (const announcement of announcements) {
-        let audioUrl = "";
 
-        if (announcement.audio_path) {
-            const {
-                data: signedData,
-                error: signedError
-            } = await supabaseClient
-                .storage
-                .from("announcement-audio")
-                .createSignedUrl(
-                    announcement.audio_path,
-                    3600
-                );
+    for (
+        const announcement
+        of announcements
+    ) {
 
-            if (!signedError) {
-                audioUrl =
-                    signedData?.signedUrl || "";
-            }
-        }
+        /*
+         * Use the saved URL when offline.
+         * Use it directly when online too.
+         */
+
+        const audioUrl =
+            announcement._offlineAudioUrl ||
+            "";
+
 
         items.push(`
+
             <div class="list-item">
+
                 <div class="row space">
+
                     <div>
+
                         <b>
-                            📢 ${escapeHtml(
-                                announcement.title || ""
+
+                            📢
+                            ${escapeHtml(
+                                announcement.title ||
+                                ""
                             )}
+
                         </b>
 
+
                         <div class="muted">
+
                             ${escapeHtml(
-                                announcement.body || ""
+                                announcement.body ||
+                                ""
                             )}
+
                         </div>
+
                     </div>
+
                 </div>
+
 
                 ${
                     audioUrl
+
                         ? `
+
                             <audio
                                 controls
+                                preload="none"
                                 style="
                                     width:100%;
                                     margin-top:10px;
                                 "
                             >
+
                                 <source
-                                    src="${audioUrl}"
+                                    src="${escapeHtml(
+                                        audioUrl
+                                    )}"
                                     type="audio/webm"
                                 >
+
                             </audio>
+
                         `
+
                         : ""
                 }
 
-                <div class="muted" style="margin-top:8px;">
-                    ${announcement.published_at
-                        ? new Date(
-                            announcement.published_at
-                        ).toLocaleString()
-                        : ""}
+
+                <div
+                    class="muted"
+                    style="margin-top:8px;"
+                >
+
+                    ${
+                        announcement.published_at
+
+                            ? new Date(
+                                announcement.published_at
+                            ).toLocaleString()
+
+                            : ""
+                    }
+
                 </div>
+
             </div>
+
         `);
+
     }
 
+
+    /* =========================================================
+       RETURN PAGE
+    ========================================================= */
+
     return `
+
         <div class="card">
-            <h3>📢 ማስታወቂያዎች</h3>
+
+            <h3>
+                📢 ማስታወቂያዎች
+            </h3>
+
 
             <div
                 class="list"
                 style="margin-top:15px;"
             >
+
                 ${items.join("")}
+
             </div>
+
         </div>
+
     `;
+
 }
 
 /* =========================================================
@@ -7245,81 +8580,194 @@ function mentorCertificatesPage() {
 
 async function leaderboardPage() {
 
-    if (!supabaseClient) {
-        return `
-            <div class="card">
-                <h3>🏆 Leaderboard</h3>
-                <div class="muted">
-                    Supabase is unavailable.
-                </div>
-            </div>
-        `;
-    }
+    /*
+     * =========================================================
+     * GET CLASS ID
+     * =========================================================
+     */
 
     const classId =
         state.currentClass?.id ||
         state.mentorClasses?.[0]?.id;
 
+
     if (!classId) {
+
         return `
             <div class="card">
+
                 <h3>🏆 Leaderboard</h3>
+
                 <div class="muted">
                     No active class found.
                 </div>
+
             </div>
         `;
+
     }
 
-    const {
-        data,
-        error
-    } = await supabaseClient.rpc(
-        "get_class_leaderboard",
-        {
-            p_class_id: classId
+
+    /*
+     * =========================================================
+     * LOAD SAVED OFFLINE LEADERBOARD
+     * =========================================================
+     */
+
+    let rows = [];
+
+    const cachedLeaderboard =
+        typeof getOfflineContent === "function"
+            ? getOfflineContent(
+                `leaderboard_${classId}`,
+                []
+            )
+            : [];
+
+
+    /*
+     * =========================================================
+     * OFFLINE
+     * =========================================================
+     */
+
+    if (!navigator.onLine) {
+
+        rows =
+            Array.isArray(cachedLeaderboard)
+                ? cachedLeaderboard
+                : [];
+
+    }
+
+
+    /*
+     * =========================================================
+     * ONLINE
+     * =========================================================
+     */
+
+    else {
+
+        try {
+
+            if (!supabaseClient) {
+
+                rows =
+                    Array.isArray(cachedLeaderboard)
+                        ? cachedLeaderboard
+                        : [];
+
+            } else {
+
+                const {
+                    data,
+                    error
+                } =
+                    await supabaseClient.rpc(
+                        "get_class_leaderboard",
+                        {
+                            p_class_id:
+                                classId
+                        }
+                    );
+
+
+                /*
+                 * SUPABASE ERROR
+                 */
+
+                if (error) {
+
+                    console.warn(
+                        "⚠️ Leaderboard failed. Using offline copy:",
+                        error
+                    );
+
+                    rows =
+                        Array.isArray(
+                            cachedLeaderboard
+                        )
+                            ? cachedLeaderboard
+                            : [];
+
+                }
+
+
+                /*
+                 * SUCCESS
+                 */
+
+                else {
+
+                    rows =
+                        Array.isArray(data)
+                            ? data
+                            : [];
+
+
+                    /*
+                     * SAVE LEADERBOARD
+                     * FOR OFFLINE USE
+                     */
+
+                    if (
+                        typeof saveOfflineContent ===
+                        "function"
+                    ) {
+
+                        saveOfflineContent(
+                            `leaderboard_${classId}`,
+                            rows
+                        );
+
+                    }
+
+                }
+
+            }
+
+        } catch (error) {
+
+            console.warn(
+                "⚠️ Leaderboard request failed. Using offline copy:",
+                error
+            );
+
+
+            rows =
+                Array.isArray(cachedLeaderboard)
+                    ? cachedLeaderboard
+                    : [];
+
         }
-    );
 
-    if (error) {
-
-        console.error(
-            "❌ Leaderboard error:",
-            error
-        );
-
-        return `
-            <div class="card">
-
-                <div
-                    class="pill gold"
-                    style="margin-bottom:10px;"
-                >
-                    🏆 Leaderboard
-                </div>
-
-                <h2 style="margin:0 0 8px;">
-                    የደረጃ ሰንጠረዥ
-                </h2>
-
-                <div class="muted">
-                    Leaderboard could not be loaded.
-                </div>
-
-            </div>
-        `;
     }
 
-    const rows = data || [];
+
+    /*
+     * =========================================================
+     * CURRENT STUDENT
+     * =========================================================
+     */
 
     const currentUser =
         window.currentUser?.id;
 
+
     const myRow =
         rows.find(
             row =>
-                row.student_id === currentUser
+                row.student_id ===
+                currentUser
         );
+
+
+    /*
+     * =========================================================
+     * LEADERBOARD PAGE
+     * =========================================================
+     */
 
     return `
 
@@ -7351,21 +8799,27 @@ async function leaderboardPage() {
                         🏆 CLASS LEADERBOARD
                     </div>
 
+
                     <h2 style="margin:0 0 8px;">
                         የደረጃ ሰንጠረዥ
                     </h2>
 
+
                     <div class="muted">
+
                         ትምህርትህን ስትጨርስ
                         ደረጃህን አሻሽል።
+
                     </div>
 
                 </div>
 
-                <div
-                    class="pill"
-                >
-                    ${rows.length} students
+
+                <div class="pill">
+
+                    ${rows.length}
+                    students
+
                 </div>
 
             </div>
@@ -7402,9 +8856,11 @@ async function leaderboardPage() {
                             </div>
 
                             <div class="big">
+
                                 ${myRow.completed_lessons}
                                 /
                                 ${myRow.total_lessons}
+
                             </div>
 
                         </div>
@@ -7417,7 +8873,9 @@ async function leaderboardPage() {
                             </div>
 
                             <div class="big gold">
+
                                 ${myRow.progress_percent}%
+
                             </div>
 
                         </div>
@@ -7431,53 +8889,58 @@ async function leaderboardPage() {
 
         <div class="card">
 
-    ${
-        state.role === "mentor"
-            ? `
-                <div
-                    class="row"
-                    style="
-                        margin-bottom:16px;
-                        gap:10px;
-                        flex-wrap:wrap;
-                    "
-                >
 
-                    <input
-                        id="teacher-leaderboard-search"
-                        type="search"
-                        placeholder="🔎 Search student..."
-                        style="
-                            flex:1;
-                            min-width:220px;
-                        "
-                    >
+            ${
+                state.role === "mentor"
+                    ? `
 
-                    <button
-                        type="button"
-                        class="btn primary"
-                        id="teacher-leaderboard-search-button"
-                    >
-                        🔎 Search
-                    </button>
+                        <div
+                            class="row"
+                            style="
+                                margin-bottom:16px;
+                                gap:10px;
+                                flex-wrap:wrap;
+                            "
+                        >
 
-                </div>
-            `
-            : ""
-    }
+                            <input
+                                id="teacher-leaderboard-search"
+                                type="search"
+                                placeholder="🔎 Search student..."
+                                style="
+                                    flex:1;
+                                    min-width:220px;
+                                "
+                            >
 
-    ${
-        rows.length
+
+                            <button
+                                type="button"
+                                class="btn primary"
+                                id="teacher-leaderboard-search-button"
+                            >
+                                🔎 Search
+                            </button>
+
+                        </div>
+
+                    `
+                    : ""
+            }
+
+
+            ${
+                rows.length
 
                     ? `
 
                         <div
-    id="teacher-leaderboard-list"
-    style="
-        display:grid;
-        gap:10px;
-    "
->
+                            id="teacher-leaderboard-list"
+                            style="
+                                display:grid;
+                                gap:10px;
+                            "
+                        >
 
                             ${rows.map(
                                 row => {
@@ -7486,52 +8949,68 @@ async function leaderboardPage() {
                                         row.student_id ===
                                         currentUser;
 
+
                                     let medal =
                                         `#${row.rank_no}`;
+
 
                                     if (
                                         Number(
                                             row.rank_no
                                         ) === 1
                                     ) {
-                                        medal = "🥇";
+
+                                        medal =
+                                            "🥇";
+
                                     }
+
 
                                     if (
                                         Number(
                                             row.rank_no
                                         ) === 2
                                     ) {
-                                        medal = "🥈";
+
+                                        medal =
+                                            "🥈";
+
                                     }
+
 
                                     if (
                                         Number(
                                             row.rank_no
                                         ) === 3
                                     ) {
-                                        medal = "🥉";
+
+                                        medal =
+                                            "🥉";
+
                                     }
+
 
                                     return `
 
                                         <div
-    class="list-item"
-    data-search="${escapeHtml(
-        [
-            row.full_name,
-            row.public_student_id
-        ]
-            .filter(Boolean)
-            .join(" ")
-    )}"
-    style="
-        padding:16px;
+                                            class="list-item"
+                                            data-search="${escapeHtml(
+                                                [
+                                                    row.full_name,
+                                                    row.public_student_id
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(" ")
+                                            )}"
+                                            style="
+                                                padding:16px;
+
                                                 border:${
                                                     isMe
                                                         ? "1px solid rgba(213,173,81,.45)"
                                                         : "1px solid rgba(255,255,255,.08)"
                                                 };
+
                                                 background:${
                                                     isMe
                                                         ? "rgba(213,173,81,.07)"
@@ -7561,7 +9040,9 @@ async function leaderboardPage() {
                                                         background:rgba(213,173,81,.10);
                                                     "
                                                 >
+
                                                     ${medal}
+
                                                 </div>
 
 
@@ -7583,9 +9064,11 @@ async function leaderboardPage() {
                                                             "Student"
                                                         )}
 
+
                                                         ${
                                                             isMe
                                                                 ? `
+
                                                                     <span
                                                                         class="pill gold"
                                                                         style="
@@ -7594,6 +9077,7 @@ async function leaderboardPage() {
                                                                     >
                                                                         You
                                                                     </span>
+
                                                                 `
                                                                 : ""
                                                         }
@@ -7607,12 +9091,14 @@ async function leaderboardPage() {
                                                             margin-top:4px;
                                                         "
                                                     >
+
                                                         ${
                                                             escapeHtml(
                                                                 row.public_student_id ||
                                                                 "Student"
                                                             )
                                                         }
+
                                                     </div>
 
                                                 </div>
@@ -7626,13 +9112,16 @@ async function leaderboardPage() {
                                                 >
 
                                                     <b>
+
                                                         ${
                                                             row.completed_lessons
                                                         }/
                                                         ${
                                                             row.total_lessons
                                                         }
+
                                                     </b>
+
 
                                                     <div
                                                         class="muted"
@@ -7640,9 +9129,11 @@ async function leaderboardPage() {
                                                             margin-top:4px;
                                                         "
                                                     >
+
                                                         ${
                                                             row.progress_percent
                                                         }%
+
                                                     </div>
 
                                                 </div>
@@ -7671,8 +9162,11 @@ async function leaderboardPage() {
                                                                 ) || 0
                                                             )
                                                         )}%;
+
                                                         height:100%;
+
                                                         border-radius:999px;
+
                                                         background:linear-gradient(
                                                             90deg,
                                                             #d5ad51,
@@ -7712,18 +9206,35 @@ async function leaderboardPage() {
                                 🏆
                             </div>
 
+
                             <h3>
-                                No students yet
+
+                                ${
+                                    navigator.onLine
+                                        ? "No students yet"
+                                        : "No saved leaderboard"
+
+                                }
+
                             </h3>
 
+
                             <div class="muted">
-                                The leaderboard will appear
-                                when students join the class.
+
+                                ${
+                                    navigator.onLine
+
+                                        ? "The leaderboard will appear when students join the class."
+
+                                        : "Open the leaderboard while online first so it can be saved for offline use."
+                                }
+
                             </div>
 
                         </div>
 
                     `
+
             }
 
         </div>
