@@ -1,4 +1,4 @@
-const CACHE_NAME = "kfy-begena-v5";
+const CACHE_NAME = "kfy-begena-v6";
 
 const APP_SHELL = [
     "./",

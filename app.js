@@ -3120,7 +3120,7 @@ function renderNavigation() {
 
                     }
 
-                    render();
+                    await render();
 
                 }
             );
