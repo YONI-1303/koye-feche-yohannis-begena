@@ -1484,81 +1484,129 @@ async function loadStudentClass(userId) {
 
 async function loadMentorClasses(userId) {
 
-    state.mentorClasses =
-        [];
+    state.mentorClasses = [];
 
-
-    if (
-        !supabaseClient ||
-        !userId
-    ) {
-
+    if (!supabaseClient || !userId) {
         return [];
-
     }
-
 
     try {
 
+        // FIRST: get the classes assigned to this mentor
         const {
-            data,
-            error
-        } =
-            await supabaseClient
-                .from("class_mentors")
-                .select(`
-                    class_id,
-                    classes (
-                        id,
-                        name,
-                        level,
-                        description,
-                        active,
-                        course_completed
-                    )
-                `)
-                .eq(
-                    "mentor_id",
-                    userId
-                );
+            data: mentorRows,
+            error: mentorError
+        } = await supabaseClient
+            .from("class_mentors")
+            .select("class_id")
+            .eq("mentor_id", userId);
 
+        console.log(
+            "🟣 MENTOR ID:",
+            userId
+        );
 
-        if (error) {
+        console.log(
+            "🟣 MENTOR CLASS ROWS:",
+            mentorRows,
+            mentorError
+        );
+
+        if (
+            mentorError
+        ) {
+            console.error(
+                "❌ class_mentors error:",
+                mentorError
+            );
+        }
+
+        // If the relationship query gives nothing,
+        // fall back to active classes.
+        let classIds =
+            (mentorRows || [])
+                .map(row => row.class_id)
+                .filter(Boolean);
+
+        if (!classIds.length) {
 
             console.warn(
-                "⚠️ Mentor class lookup failed:",
-                error.message
+                "⚠️ No class_mentors rows returned. Using active class fallback."
+            );
+
+            const {
+                data: activeClasses,
+                error: activeClassError
+            } = await supabaseClient
+                .from("classes")
+                .select(`
+                    id,
+                    name,
+                    level,
+                    description,
+                    active,
+                    course_completed
+                `)
+                .eq("active", true);
+
+            console.log(
+                "🟣 ACTIVE CLASS FALLBACK:",
+                activeClasses,
+                activeClassError
+            );
+
+            state.mentorClasses =
+                activeClasses || [];
+
+            return state.mentorClasses;
+        }
+
+        // Load the actual class records
+        const {
+            data: classes,
+            error: classError
+        } = await supabaseClient
+            .from("classes")
+            .select(`
+                id,
+                name,
+                level,
+                description,
+                active,
+                course_completed
+            `)
+            .in("id", classIds);
+
+        console.log(
+            "🟢 MENTOR CLASSES:",
+            classes,
+            classError
+        );
+
+        if (classError) {
+
+            console.error(
+                "❌ Classes query failed:",
+                classError
             );
 
             return [];
-
         }
 
-
         state.mentorClasses =
-            (data || [])
-                .map(
-                    row =>
-                        row.classes
-                )
-                .filter(
-                    Boolean
-                );
-
+            classes || [];
 
         return state.mentorClasses;
 
     } catch (error) {
 
-        console.warn(
-            "⚠️ Mentor class request failed:",
+        console.error(
+            "❌ Mentor class request failed:",
             error
         );
 
         return [];
-
     }
-
 }
 
 
